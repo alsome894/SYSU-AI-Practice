@@ -19,6 +19,8 @@ if __name__ == '__main__':
     import os
     import torch.cuda.amp as amp
 
+    from pathlib import Path
+
     # ------------------- CUDA配置检查 -------------------
     print(f"PyTorch版本: {torch.__version__}")
     print(f"CUDA可用: {torch.cuda.is_available()}")
@@ -42,7 +44,10 @@ if __name__ == '__main__':
     ])
 
     # ------------------- 数据加载 -------------------
-    data_dir = 'Rock Data'
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent
+    data_dir = project_root / 'Rock Data'
+
     train_dir = os.path.join(data_dir, 'train')
     val_dir = os.path.join(data_dir, 'valid')
     test_dir = os.path.join(data_dir, 'test')

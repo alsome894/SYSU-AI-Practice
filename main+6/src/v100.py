@@ -4,6 +4,9 @@
 """
 
 # 主程序保护模块（解决多进程问题）
+from pathlib import Path
+
+
 if __name__ == '__main__':
     import torch
     import torch.nn as nn
@@ -61,7 +64,10 @@ if __name__ == '__main__':
             return len(self.dataset)
 
     # ------------------- 数据加载 -------------------
-    data_dir = 'Rock Data'
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent
+    data_dir = project_root / 'Rock Data'
+    
     train_dataset = DualInputDataset(os.path.join(data_dir, 'train'))
     val_dataset = DualInputDataset(os.path.join(data_dir, 'valid'))
     test_dataset = DualInputDataset(os.path.join(data_dir, 'test'))
