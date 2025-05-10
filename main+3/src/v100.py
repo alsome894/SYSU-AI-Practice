@@ -192,9 +192,9 @@ if __name__ == '__main__':
             print(f"验证准确率未提升，当前最佳：{best_val_acc:.4f}")
         
         # 早停检测
-        if no_improve_epochs >= early_stop_patience:
+        '''if no_improve_epochs >= early_stop_patience:
             print(f"\n早停触发，连续{early_stop_patience}轮未提升")
-            break
+            break'''
 
     # ------------------- 训练后处理 -------------------
     # 统计训练时间
@@ -205,20 +205,20 @@ if __name__ == '__main__':
     # 可视化训练过程
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
-    plt.plot(history['train_loss'], label='训练损失')
-    plt.title('训练损失')
+    plt.plot(history['train_loss'], label='train_loss')
+    plt.title('train_loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     
     plt.subplot(1, 3, 2)
-    plt.plot(history['val_acc'], label='验证准确率')
-    plt.title('验证准确率')
+    plt.plot(history['val_acc'], label='test_accuracy')
+    plt.title('test_accuracy')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     
     plt.subplot(1, 3, 3)
-    plt.plot(history['lr'], label='学习率')
-    plt.title('学习率变化')
+    plt.plot(history['lr'], label='learn_rate')
+    plt.title('learn_rate变化')
     plt.xlabel('Epoch')
     plt.ylabel('Learning Rate')
     

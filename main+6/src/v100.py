@@ -1,6 +1,6 @@
 """
-基于RockS2Net的岩石图像分类实现
-双分支网络结构：全局特征分支 + 局部特征分支
+基于RockS2Net的岩石分类统一格式实现
+包含训练曲线、混合精度训练和完整评估流程
 """
 
 # 主程序保护模块（解决多进程问题）
@@ -13,201 +13,251 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import numpy as np
     from tqdm import tqdm
-    from sklearn.metrics import classification_report
+    from sklearn.metrics import classification_report, confusion_matrix
     import time
     import os
     import torch.nn.functional as F
+    import torch.cuda.amp as amp
 
-    # ------------------- CUDA配置检查 -------------------
+    # ------------------- 初始化配置 -------------------
+    # CUDA可用性检查
     print(f"PyTorch版本: {torch.__version__}")
     print(f"CUDA可用: {torch.cuda.is_available()}")
     print(f"当前设备: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
 
-    # ------------------- 自定义数据集类 -------------------
+    # 固定随机种子
+    SEED = 42
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+
+    # ------------------- 数据预处理 -------------------
     class DualInputDataset(Dataset):
-        """生成双输入数据：全局图像 + 局部裁剪"""
-        def __init__(self, root_dir, transform=None):
-            self.dataset = datasets.ImageFolder(root_dir, transform=transform)
-            self.transform = transform
+        """双输入数据集：全局图像 + 局部裁剪"""
+        def __init__(self, root_dir):
+            self.dataset = datasets.ImageFolder(
+                root_dir,
+                transform=transforms.Compose([
+                    transforms.Resize(256),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                ])
+            )
             
         def __getitem__(self, index):
             img, label = self.dataset[index]
-            
-            # 生成局部裁剪（随机裁剪原图的1/4区域）
+            # 生成局部裁剪（原图的50%区域）
             _, h, w = img.shape
-            crop_size = int(h * 0.5)
+            crop_size = h // 2
             top = np.random.randint(0, h - crop_size)
             left = np.random.randint(0, w - crop_size)
             local_img = img[:, top:top+crop_size, left:left+crop_size]
-            local_img = F.interpolate(local_img.unsqueeze(0), size=(112, 112)).squeeze()
-            
+            local_img = F.interpolate(local_img.unsqueeze(0), size=112, mode='bilinear').squeeze()
             return (img, local_img), label
         
         def __len__(self):
             return len(self.dataset)
 
-    # ------------------- 数据预处理 -------------------
-    base_transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
-
     # ------------------- 数据加载 -------------------
     data_dir = 'Rock Data'
-    train_dir = os.path.join(data_dir, 'train')
-    
-    # 创建双输入数据集
-    train_dataset = DualInputDataset(train_dir, transform=base_transform)
-    val_dataset = DualInputDataset(os.path.join(data_dir, 'valid'), transform=base_transform)
-    test_dataset = DualInputDataset(os.path.join(data_dir, 'test'), transform=base_transform)
+    train_dataset = DualInputDataset(os.path.join(data_dir, 'train'))
+    val_dataset = DualInputDataset(os.path.join(data_dir, 'valid'))
+    test_dataset = DualInputDataset(os.path.join(data_dir, 'test'))
 
-    # 配置数据加载器
+    # 数据加载器配置
     batch_size = 32
     num_workers = 0 if os.name == 'nt' else 8
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
+                            num_workers=num_workers, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False,
+                           num_workers=num_workers, pin_memory=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False,
+                            num_workers=num_workers, pin_memory=True)
 
-    # ------------------- 网络定义 -------------------
-    class GlobalBranch(nn.Module):
-        """全局特征提取分支"""
-        def __init__(self):
-            super().__init__()
-            resnet = models.resnet34(pretrained=True)
-            self.features = nn.Sequential(*list(resnet.children())[:-2])  # 移除最后两层
-            
-        def forward(self, x):
-            x = self.features(x)
-            x = F.adaptive_avg_pool2d(x, (1, 1))
-            return x.flatten(1)
-
-    class LocalBranch(nn.Module):
-        """局部特征提取分支（高分辨率处理）"""
-        def __init__(self):
-            super().__init__()
-            self.conv_layers = nn.Sequential(
-                nn.Conv2d(3, 64, kernel_size=3, padding=1),
-                nn.BatchNorm2d(64),
-                nn.ReLU(),
-                nn.MaxPool2d(2),
-                nn.Conv2d(64, 128, kernel_size=3, padding=1),
-                nn.BatchNorm2d(128),
-                nn.ReLU(),
-                nn.MaxPool2d(2),
-                nn.Conv2d(128, 256, kernel_size=3, padding=1),
-                nn.BatchNorm2d(256),
-                nn.ReLU(),
-                nn.AdaptiveAvgPool2d((1, 1))
-            )
-            
-        def forward(self, x):
-            return self.conv_layers(x).flatten(1)
-
+    # ------------------- 模型定义 -------------------
     class RockS2Net(nn.Module):
         """双分支岩石分类网络"""
         def __init__(self, num_classes):
             super().__init__()
-            self.global_branch = GlobalBranch()
-            self.local_branch = LocalBranch()
-            
-            # 特征融合层
-            self.fc = nn.Sequential(
-                nn.Linear(512 + 256, 512),
+            # 全局分支（预训练ResNet34）
+            self.global_net = nn.Sequential(
+                *list(models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1).children())[:-2],
+                nn.AdaptiveAvgPool2d((1, 1))
+            )
+            # 局部分支（自定义CNN）
+            self.local_net = nn.Sequential(
+                nn.Conv2d(3, 64, 3, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Conv2d(64, 128, 3, padding=1),
+                nn.BatchNorm2d(128),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.AdaptiveAvgPool2d((1, 1))
+            )
+            # 特征融合
+            self.classifier = nn.Sequential(
+                nn.Linear(512 + 128, 256),
                 nn.ReLU(),
                 nn.Dropout(0.5),
-                nn.Linear(512, num_classes)
+                nn.Linear(256, num_classes)
             )
-            
-        def forward(self, global_x, local_x):
-            global_feat = self.global_branch(global_x)
-            local_feat = self.local_branch(local_x)
-            combined = torch.cat([global_feat, local_feat], dim=1)
-            return self.fc(combined)
 
-    # ------------------- 模型初始化 -------------------
-    num_classes = len(train_dataset.dataset.classes)
-    model = RockS2Net(num_classes)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+        def forward(self, global_x, local_x):
+            global_feat = self.global_net(global_x).flatten(1)
+            local_feat = self.local_net(local_x).flatten(1)
+            combined = torch.cat([global_feat, local_feat], dim=1)
+            return self.classifier(combined)
 
     # ------------------- 训练配置 -------------------
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = RockS2Net(len(train_dataset.dataset.classes)).to(device)
+    scaler = amp.GradScaler()
+
+    # 优化器配置
     optimizer = optim.AdamW([
-        {'params': model.global_branch.parameters(), 'lr': 1e-4},
-        {'params': model.local_branch.parameters(), 'lr': 1e-3},
-        {'params': model.fc.parameters(), 'lr': 1e-3}
+        {'params': model.global_net.parameters(), 'lr': 1e-4},
+        {'params': model.local_net.parameters(), 'lr': 1e-3},
+        {'params': model.classifier.parameters(), 'lr': 1e-3}
     ], weight_decay=1e-4)
-    
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2)
+
+    # 学习率调度器
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=2, factor=0.5)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+
+    # 训练参数
+    num_epochs = 50
+    best_val_acc = 0.0
+    early_stop_patience = 5
+    history = {'train_loss': [], 'val_acc': [], 'lr': []}
 
     # ------------------- 训练循环 -------------------
-    def train_model(model, train_loader, val_loader, epochs=50):
-        best_acc = 0.0
-        for epoch in range(epochs):
-            model.train()
-            running_loss = 0.0
-            
-            # 训练阶段
-            for (global_imgs, local_imgs), labels in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
+    print("\n开始训练双分支网络...")
+    start_time = time.time()
+
+    for epoch in range(num_epochs):
+        epoch_start = time.time()
+        print(f"\nEpoch {epoch+1}/{num_epochs}")
+        print('-' * 50)
+        
+        # 训练阶段
+        model.train()
+        running_loss = 0.0
+        
+        with tqdm(train_loader, unit="batch", desc="训练") as pbar:
+            for (global_imgs, local_imgs), labels in pbar:
+                global_imgs = global_imgs.to(device, non_blocking=True)
+                local_imgs = local_imgs.to(device, non_blocking=True)
+                labels = labels.to(device, non_blocking=True)
+                
+                # 混合精度训练
+                with amp.autocast():
+                    outputs = model(global_imgs, local_imgs)
+                    loss = criterion(outputs, labels)
+                
+                # 反向传播优化
+                optimizer.zero_grad()
+                scaler.scale(loss).backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                scaler.step(optimizer)
+                scaler.update()
+                
+                # 记录损失
+                running_loss += loss.item() * global_imgs.size(0)
+                pbar.set_postfix(loss=loss.item())
+        
+        # 计算epoch损失
+        epoch_loss = running_loss / len(train_dataset)
+        history['train_loss'].append(epoch_loss)
+        
+        # 验证阶段
+        model.eval()
+        val_correct = 0
+        with torch.no_grad():
+            for (global_imgs, local_imgs), labels in val_loader:
                 global_imgs = global_imgs.to(device)
                 local_imgs = local_imgs.to(device)
                 labels = labels.to(device)
                 
-                optimizer.zero_grad()
                 outputs = model(global_imgs, local_imgs)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                
-                running_loss += loss.item() * global_imgs.size(0)
+                val_correct += (outputs.argmax(1) == labels).sum().item()
+        
+        val_acc = val_correct / len(val_dataset)
+        history['val_acc'].append(val_acc)
+        scheduler.step(val_acc)
+        history['lr'].append(optimizer.param_groups[0]['lr'])
+        
+        # 保存最佳模型
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), 'best_model.pth')
+            print(f"验证准确率提升至 {val_acc:.4f}，模型已保存！")
+        else:
+            print(f"验证准确率未提升，当前最佳：{best_val_acc:.4f}")
+        
+        # 早停检测
+        if (epoch - np.argmax(history['val_acc'])) > early_stop_patience:
+            print(f"\n早停触发，连续{early_stop_patience}轮未提升")
+            break
+        
+        # 打印时间统计
+        epoch_time = time.time() - epoch_start
+        print(f"Epoch耗时: {epoch_time//60:.0f}m {epoch_time%60:.0f}s")
 
-            # 验证阶段
-            model.eval()
-            correct = 0
-            with torch.no_grad():
-                for (global_imgs, local_imgs), labels in val_loader:
-                    global_imgs = global_imgs.to(device)
-                    local_imgs = local_imgs.to(device)
-                    labels = labels.to(device)
-                    
-                    outputs = model(global_imgs, local_imgs)
-                    _, preds = torch.max(outputs, 1)
-                    correct += (preds == labels).sum().item()
-            
-            val_acc = correct / len(val_dataset)
-            scheduler.step(val_acc)
-            
-            # 保存最佳模型
-            if val_acc > best_acc:
-                best_acc = val_acc
-                torch.save(model.state_dict(), 'rocks2net_best.pth')
-                print(f"验证准确率提升至 {val_acc:.4f}，模型已保存！")
+    # ------------------- 训练后处理 -------------------
+    total_time = time.time() - start_time
+    print(f"\n训练完成，总耗时: {total_time//60:.0f}m {total_time%60:.0f}s")
+    print(f"最佳验证准确率: {best_val_acc:.4f}")
 
-        return model
-
-    # 执行训练
-    trained_model = train_model(model, train_loader, val_loader, epochs=50)
+    # 可视化训练曲线
+    plt.figure(figsize=(15, 5))
+    plt.subplot(1, 3, 1)
+    plt.plot(history['train_loss'], label='train_loss')
+    plt.title('train_loss_curve')
+    plt.xlabel('Epoch')
+    
+    plt.subplot(1, 3, 2)
+    plt.plot(history['val_acc'], label='test_accuracy')
+    plt.title('test_accuracy_curve')
+    plt.xlabel('Epoch')
+    
+    plt.subplot(1, 3, 3)
+    plt.plot(history['lr'], label='learn_rate')
+    plt.title('learn_rate变化')
+    plt.xlabel('Epoch')
+    
+    plt.tight_layout()
+    plt.savefig('training_metrics.png')
+    plt.show()
 
     # ------------------- 测试评估 -------------------
-    trained_model.load_state_dict(torch.load('rocks2net_best.pth'))
-    trained_model.eval()
+    model.load_state_dict(torch.load('best_model.pth'))
+    model.eval()
     
     test_preds = []
     test_labels = []
+    test_correct = 0
+    
     with torch.no_grad():
-        correct = 0
         for (global_imgs, local_imgs), labels in test_loader:
             global_imgs = global_imgs.to(device)
             local_imgs = local_imgs.to(device)
             labels = labels.to(device)
             
-            outputs = trained_model(global_imgs, local_imgs)
-            _, preds = torch.max(outputs, 1)
+            outputs = model(global_imgs, local_imgs)
+            preds = outputs.argmax(dim=1)
+            test_correct += (preds == labels).sum().item()
             test_preds.extend(preds.cpu().numpy())
             test_labels.extend(labels.cpu().numpy())
-            correct += (preds == labels).sum().item()
     
-    print(f"\n测试准确率: {correct / len(test_dataset):.4f}")
+    print(f"\n测试准确率: {test_correct/len(test_dataset):.4f}")
+    print("\n分类报告:")
     print(classification_report(test_labels, test_preds, target_names=train_dataset.dataset.classes))
+    print("\n混淆矩阵:")
+    print(confusion_matrix(test_labels, test_preds))
+
+    # 保存完整模型
+    torch.save(model, 'final_model.pth')

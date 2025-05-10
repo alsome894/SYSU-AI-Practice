@@ -190,7 +190,7 @@ if __name__ == '__main__':
                 running_loss += loss.item() * inputs.size(0)
                 pbar.set_postfix(loss=loss.item())
         
-        # 计算平均训练损失
+        # 计算平均train_loss
         epoch_loss = running_loss / len(train_dataset)
         history['train_loss'].append(epoch_loss)
         
@@ -225,9 +225,9 @@ if __name__ == '__main__':
             print(f"验证准确率未提升，当前最佳：{best_val_acc:.4f}")
         
         # 早停检测
-        if no_improve >= early_stop_patience:
+        '''if no_improve >= early_stop_patience:
             print(f"\n早停触发，连续{early_stop_patience}轮未提升")
-            break
+            break'''
         
         # 打印epoch耗时
         epoch_time = time.time() - epoch_start
@@ -241,18 +241,18 @@ if __name__ == '__main__':
     # 可视化训练过程
     plt.figure(figsize=(15, 5))
     plt.subplot(1, 3, 1)
-    plt.plot(history['train_loss'], label='训练损失')
-    plt.title('训练损失曲线')
+    plt.plot(history['train_loss'], label='train_loss')
+    plt.title('train_loss_curve')
     plt.xlabel('Epoch')
     
     plt.subplot(1, 3, 2)
-    plt.plot(history['val_acc'], label='验证准确率')
-    plt.title('验证准确率曲线')
+    plt.plot(history['val_acc'], label='test_accuracy')
+    plt.title('test_accuracy_curve')
     plt.xlabel('Epoch')
     
     plt.subplot(1, 3, 3)
-    plt.plot(history['lr'], label='学习率')
-    plt.title('学习率变化')
+    plt.plot(history['lr'], label='learn_rate')
+    plt.title('learn_rate变化')
     plt.xlabel('Epoch')
     
     plt.tight_layout()
