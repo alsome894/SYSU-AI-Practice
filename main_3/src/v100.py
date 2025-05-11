@@ -62,7 +62,7 @@ if __name__ == '__main__':
     sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
 
     # 配置数据加载器
-    batch_size = 64  # 增大批大小提升训练速度
+    batch_size = 16  # 增大批大小提升训练速度
     num_workers = 0 if os.name == 'nt' else 8  # Windows下设为0避免多进程问题
 
     train_loader = DataLoader(

@@ -10,7 +10,7 @@ if __name__ == '__main__':
     import torch.optim as optim
     from torchvision import datasets, transforms, models
     from torch.utils.data import DataLoader, Dataset
-    from torch.optim.lr_scheduler import StepLR
+    from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR
     from torch.utils.tensorboard import SummaryWriter
     import matplotlib.pyplot as plt
     import numpy as np
@@ -42,6 +42,11 @@ if __name__ == '__main__':
             1. 原始图像切片
             2. 对每个切片独立进行增强
             """
+
+            # 第零步：裁剪边缘
+            transforms.Resize(800)(img)
+            transforms.CenterCrop(640)(img)
+
             # 第一步：图像切片
             slices = []
             for i in range(2):
@@ -57,10 +62,13 @@ if __name__ == '__main__':
             # 第二步：对每个切片独立增强
             augmented_slices = []
             for slice_img in slices:
-                # 随机缩放 (0.5-2倍)
-                scale_factor = random.uniform(0.5, 2.0)
-                new_size = int(self.slice_size * scale_factor)
-                slice_img = transforms.Resize(new_size)(slice_img)
+                # 随机缩放 (0.8-1.5倍)
+                scale_factor_x = random.uniform(0.8, 1.5)
+                scale_factor_y = random.uniform(0.8, 1.5)
+                new_width  = int(self.slice_size * scale_factor_x)
+                new_height = int(self.slice_size * scale_factor_y)
+
+                slice_img = transforms.Resize((new_height, new_width))(slice_img)
                 
                 # 随机旋转 (0-360度)
                 angle = random.randint(0, 360)
@@ -172,13 +180,19 @@ if __name__ == '__main__':
     model = model.to(device)
     
     # 优化器设置（Adam算法）
-    optimizer = optim.Adam(
+    ''''optimizer = optim.Adam(
         model.fc.parameters(),
         lr=0.001,
         betas=(0.9, 0.999)
     )
     # 学习率调度
-    scheduler = StepLR(optimizer, step_size=20, gamma=0.1)
+    scheduler = StepLR(optimizer, step_size=20, gamma=0.1)'''
+    optimizer = optim.AdamW(model.parameters(), 
+        lr=0.001,
+        weight_decay=1e-4)
+
+    # 学习率调度器组合
+    scheduler = CosineAnnealingLR(optimizer, T_max=20, eta_min=1e-6)
     
     # 损失函数
     criterion = nn.CrossEntropyLoss()
