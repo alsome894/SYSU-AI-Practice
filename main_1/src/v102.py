@@ -14,12 +14,15 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 
+from pathlib import Path
 def main():
     print(f"PyTorch Version: {torch.__version__}")
     print(f"Torchvision Version: {torchvision.__version__}")
 
     # 配置参数
-    data_dir = 'Rock Data'
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent
+    data_dir = project_root / 'Rock Data'
     model_save_path = 'rock_classifier_model.pth'
     confusion_matrix_save_path = 'confusion_matrix.png'
     
