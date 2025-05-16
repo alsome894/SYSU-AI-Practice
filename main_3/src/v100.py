@@ -119,7 +119,7 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     # 训练参数
-    num_epochs = 50
+    num_epochs = 75
     best_val_acc = 0.0
     early_stop_patience = 5
     no_improve_epochs = 0
