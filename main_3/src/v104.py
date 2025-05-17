@@ -20,9 +20,7 @@ print(f"使用的设备: {DEVICE}") # 移到 main 块内打印，确保在主进
 
 current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent
-data_dir = project_root / 'Rock Data' # data_dir is a Path object
-# os.path.join correctly handles Path objects as first argument in Python 3.6+
-# and returns a string path, which is suitable for datasets.ImageFolder
+data_dir = project_root / 'Rock Data'
 TRAIN_DIR = os.path.join(data_dir, 'train')
 VALID_DIR = os.path.join(data_dir, 'valid')
 TEST_DIR = os.path.join(data_dir, 'test')
@@ -215,11 +213,10 @@ if __name__ == '__main__':
 
     print(f"使用的设备: {DEVICE}")
 
-    # os.path.isdir can handle Path objects directly
     if not os.path.isdir(data_dir):
         print(f"错误: 数据目录 '{data_dir}' 未找到。请确保它与脚本位于同一目录。")
         exit()
-    # TRAIN_DIR, VALID_DIR, TEST_DIR are already strings due to os.path.join
+
     if not os.path.isdir(TRAIN_DIR):
         print(f"错误: 训练数据目录 '{TRAIN_DIR}' 未找到。")
         exit()
@@ -235,7 +232,6 @@ if __name__ == '__main__':
          print(f"警告: 检测到的类别数量 ({NUM_CLASSES}) 与期望的 7 (指令 9) 或 9 (数据集描述) 不同。")
     print(f"模型将使用 {NUM_CLASSES} 个类别。")
 
-    # **修改点**: 将 num_workers 设置为 0 进行调试，以查看主进程中是否发生错误
     num_workers = min(os.cpu_count(), 4) 
     # num_workers = 0 
     print(f"为 DataLoader 使用 {num_workers} 个 worker (设置为0进行调试)。")
