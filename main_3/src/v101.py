@@ -18,7 +18,7 @@ data_dir = project_root / 'Rock Data'
 IMG_WIDTH = 600  # 图像宽度
 IMG_HEIGHT = 600  # 图像高度
 IMAGE_SIZE = (IMG_HEIGHT, IMG_WIDTH)  # 图像尺寸
-BATCH_SIZE = 4  # 批次大小 (如果使用GPU且显存充足，可以尝试增大此值)
+BATCH_SIZE = 32  # 批次大小 (如果使用GPU且显存充足，可以尝试增大此值)
 EPOCHS = 60  # 训练轮数
 LEARNING_RATE = 0.01  # 学习率
 # 类别数量从文件夹结构推断：Basalt、Chert、Clay、Conglomerate、Diatomite、Gypsum、Olivine-Basalt、Shale-(Mudstone)、Siliceous-Sinter
