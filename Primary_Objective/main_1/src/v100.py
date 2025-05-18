@@ -10,6 +10,8 @@ import time
 from tqdm import tqdm
 import numpy as np
 
+from pathlib import Path
+
 def plot_metrics(history, prefix=""):
     epochs_range = range(1, len(history['train_loss']) + 1)
 
@@ -39,7 +41,7 @@ def plot_metrics(history, prefix=""):
     plt.show() # 取消注释以在运行时显示
 
 def run_primary_goal():
-    print("开始主要目标：使用基础CNN进行岩石分类...")
+    print("开始初级目标：使用基础CNN进行岩石分类...")
 
     # 1. Device Configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,7 +55,9 @@ def run_primary_goal():
     NUM_CLASSES = 9
 
     # 3. Dataset Paths
-    data_dir = "./Rock Data"
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent.parent
+    data_dir = project_root / 'Rock Data'
     train_dir = os.path.join(data_dir, "train")
     valid_dir = os.path.join(data_dir, "valid")
     test_dir = os.path.join(data_dir, "test")
@@ -236,7 +240,7 @@ def run_primary_goal():
     torch.save(model, model_path)
     print(f"\n完整模型已保存到: {model_path}")
     
-    print("\n主要目标执行完成。")
+    print("\n初级目标执行完成。")
 
 if __name__ == '__main__':
     if not os.path.isdir("./Rock Data"):
@@ -245,4 +249,4 @@ if __name__ == '__main__':
         start_time = time.time()
         run_primary_goal()
         end_time = time.time()
-        print(f"主要目标总执行时间: {(end_time - start_time)/60:.2f} 分钟")
+        print(f"初级目标总执行时间: {(end_time - start_time)/60:.2f} 分钟")
