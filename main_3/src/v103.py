@@ -184,9 +184,9 @@ if __name__ == '__main__':
             best_acc = val_acc
             torch.save(model.state_dict(), 'best_model.pth')
             print("Saved best model.")
-        if early_stop(val_acc):
+        '''if early_stop(val_acc):
             print("Early stopping triggered.")
-            break
+            break'''
 
     # 测试评估
     model.load_state_dict(torch.load('best_model.pth'))
