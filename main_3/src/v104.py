@@ -28,7 +28,7 @@ TEST_DIR = os.path.join(data_dir, 'test')
 # 根据指令设置超参数
 LEARNING_RATE = 0.01    # 学习率 (指令 12)
 EPOCHS = 60             # 训练周期 (指令 12)
-BATCH_SIZE = 4         # 批量大小 (指令 12)
+BATCH_SIZE = 2         # 批量大小 (指令 12)
 IMG_SIZE = 600          # 图像尺寸 (指令 14: 统一缩放图像到 600x600x3)
 
 # 根据指令 2 实现自定义数据增强
