@@ -1,17 +1,18 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms, models
+from torchvision import datasets, transforms # models is not strictly needed now
 from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import os
 import time
 from tqdm import tqdm
-import numpy as np # 引入numpy用于绘图时的x轴
+import numpy as np
 
 from pathlib import Path
 
+# (plot_metrics function remains the same as provided in the previous response)
 def plot_metrics(history, prefix=""):
     epochs_range = range(1, len(history['train_loss']) + 1)
 
@@ -36,24 +37,94 @@ def plot_metrics(history, prefix=""):
     plt.ylabel('Accuracy')
     
     plt.tight_layout()
-    plt.savefig(f"{prefix.lower().replace(' ', '_')}training_curves.png")
-    print(f"训练曲线图已保存为 {prefix.lower().replace(' ', '_')}training_curves.png")
-    # plt.show() # 取消注释以在运行时显示
+    save_path = f"{prefix.lower().replace(' ', '_').replace('-', '_')}training_curves.png"
+    plt.savefig(save_path)
+    print(f"训练曲线图已保存为 {save_path}")
+    # plt.show()
 
-def run_intermediate_goal():
-    print("开始中级目标：使用优化的ResNet18和数据增强进行岩石分类...")
+class EnhancedCNN(nn.Module):
+    def __init__(self, num_classes, img_size_for_fc_calc, dropout_rate=0.4):
+        super(EnhancedCNN, self).__init__()
+        self.img_size_for_fc_calc = img_size_for_fc_calc
+
+        # Convolutional Block 1
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2) # IMG_SIZE -> IMG_SIZE/2
+
+        # Convolutional Block 2
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # IMG_SIZE/2 -> IMG_SIZE/4
+
+        # Convolutional Block 3
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.relu3 = nn.ReLU()
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2) # IMG_SIZE/4 -> IMG_SIZE/8
+
+        # Convolutional Block 4 (Enhanced: More filters, deeper)
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        self.bn4 = nn.BatchNorm2d(256)
+        self.relu4 = nn.ReLU()
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2) # IMG_SIZE/8 -> IMG_SIZE/16
+        
+        # Calculate flattened size dynamically for FC layers
+        with torch.no_grad(): # Avoid tracking gradients for this dummy pass
+            # Create a dummy input with the specified image size
+            dummy_input = torch.zeros(1, 3, self.img_size_for_fc_calc, self.img_size_for_fc_calc)
+            # Pass the dummy input through the convolutional part of the network
+            dummy_output = self._forward_conv_part(dummy_input)
+            # Calculate the flattened size
+            self.flattened_size = dummy_output.view(1, -1).size(1)
+            # print(f"Dynamically calculated flattened size: {self.flattened_size}") # For debugging
+
+        self.flatten = nn.Flatten()
+        
+        # Fully Connected Layers (Enhanced: More layers, dropout)
+        self.fc1 = nn.Linear(self.flattened_size, 1024) # Increased neurons
+        self.relu_fc1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout_rate)
+
+        self.fc2 = nn.Linear(1024, 512) # Additional hidden layer
+        self.relu_fc2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(dropout_rate)
+
+        self.fc3 = nn.Linear(512, num_classes) # Output layer
+
+    def _forward_conv_part(self, x):
+        # Helper method to pass input through convolutional blocks
+        x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
+        x = self.pool3(self.relu3(self.bn3(self.conv3(x))))
+        x = self.pool4(self.relu4(self.bn4(self.conv4(x))))
+        return x
+
+    def forward(self, x):
+        x = self._forward_conv_part(x) # Pass through conv blocks
+        x = self.flatten(x)           # Flatten the output
+        x = self.dropout1(self.relu_fc1(self.fc1(x))) # Pass through first FC layer with ReLU and Dropout
+        x = self.dropout2(self.relu_fc2(self.fc2(x))) # Pass through second FC layer with ReLU and Dropout
+        x = self.fc3(x)               # Output layer
+        return x
+
+def run_intermediate_goal_optimized_cnn():
+    print("开始中级目标：使用增强的自定义CNN和数据增强进行岩石分类...")
 
     # 1. Device Configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"使用设备: {device}")
 
     # 2. Hyperparameters and Configuration
-    IMG_SIZE = 224
+    IMG_SIZE = 224       # Keep consistent or ensure model adapts
     BATCH_SIZE = 32
-    LEARNING_RATE = 0.0001
-    NUM_EPOCHS = 25
+    LEARNING_RATE = 0.0005 # Potentially smaller LR for a more complex model
+    NUM_EPOCHS = 50      # Might need more epochs for a deeper model
     NUM_CLASSES = 9
-    WEIGHT_DECAY = 1e-4
+    WEIGHT_DECAY = 1e-4  # L2 Regularization
+    DROPOUT_RATE = 0.4   # Dropout rate for FC layers
 
     # 3. Dataset Paths
     current_file = Path(__file__).resolve()
@@ -64,21 +135,21 @@ def run_intermediate_goal():
     test_dir = os.path.join(data_dir, "test")
 
     # 4. Data Preprocessing and Transforms (with Data Augmentation)
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
+    mean = [0.485, 0.456, 0.406] # ImageNet mean
+    std = [0.229, 0.224, 0.225]  # ImageNet std
 
     train_transforms_augmented = transforms.Compose([
         transforms.RandomResizedCrop(IMG_SIZE, scale=(0.8, 1.0)),
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomRotation(degrees=15),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-        # Consider adding transforms.RandomAffine(degrees=0, shear=10) if shear is important
+        transforms.RandomRotation(degrees=20), # Increased rotation slightly
+        transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.1), # Increased jitter
+        transforms.RandomAffine(degrees=0, shear=10), # Added shear as mentioned in dataset description
         transforms.ToTensor(),
         transforms.Normalize(torch.Tensor(mean), torch.Tensor(std))
     ])
 
     val_test_transforms = transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)), # Or Resize(256) then CenterCrop(224)
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize(torch.Tensor(mean), torch.Tensor(std))
     ])
@@ -98,30 +169,26 @@ def run_intermediate_goal():
     if len(class_names) != NUM_CLASSES:
         print(f"警告: 找到 {len(class_names)} 个类别，但 NUM_CLASSES 设置为 {NUM_CLASSES}")
 
-    # 7. Define Optimized Model (Pre-trained ResNet18)
-    model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-    
-    # Fine-tuning: Unfreeze all layers or a subset of layers
-    # For full fine-tuning, all params require_grad should be True (default for new layers)
-    # For partial fine-tuning, freeze earlier layers:
-    # for name, param in model.named_parameters():
-    #     if "fc" not in name and "layer4" not in name: # Example: unfreeze only last block and fc
-    #         param.requires_grad = False
-            
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, NUM_CLASSES) # Replace classifier
-    model = model.to(device)
+    # 7. Define Enhanced Custom CNN Model
+    model = EnhancedCNN(num_classes=NUM_CLASSES, img_size_for_fc_calc=IMG_SIZE, dropout_rate=DROPOUT_RATE).to(device)
+    print("\n增强的CNN模型架构:")
+    print(model)
+    # Count model parameters
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"总可训练参数: {total_params:,}")
+
 
     # 8. Define Loss Function and Optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1) # Optional
+    # Optional: Learning rate scheduler
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5, verbose=True)
 
     # 9. Train Model
     print("\n开始模型训练...")
     history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
     best_val_acc = 0.0
-    best_model_path = "optimized_rock_classifier_best_statedict.pth" # Saving state_dict
+    best_model_path = "enhanced_custom_cnn_best_statedict.pth"
 
     for epoch in range(NUM_EPOCHS):
         model.train()
@@ -177,7 +244,7 @@ def run_intermediate_goal():
               f"训练损失: {epoch_loss_train:.4f}, 训练准确率: {epoch_acc_train:.4f} - "
               f"验证损失: {epoch_loss_val:.4f}, 验证准确率: {epoch_acc_val:.4f}")
 
-        # if scheduler: scheduler.step()
+        # if scheduler: scheduler.step(epoch_loss_val) # For ReduceLROnPlateau
 
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val
@@ -186,33 +253,24 @@ def run_intermediate_goal():
 
     print("训练完成！")
 
-    # Plot training history
-    plot_metrics(history, prefix="Intermediate Goal ")
+    plot_metrics(history, prefix="Intermediate Goal-EnhancedCNN ")
 
-    # Load the best model state_dict for evaluation
     print(f"\n从 {best_model_path} 加载最佳模型状态字典进行测试...")
     if os.path.exists(best_model_path):
-        # Re-define the model structure before loading state_dict
-        # model_for_eval = models.resnet18(weights=None) # No pre-trained weights when loading state_dict for a modified model
-        # num_ftrs_eval = model_for_eval.fc.in_features
-        # model_for_eval.fc = nn.Linear(num_ftrs_eval, NUM_CLASSES)
-        # model_for_eval.load_state_dict(torch.load(best_model_path))
-        # model_for_eval = model_for_eval.to(device)
-        # model_for_eval.eval()
-        # current_model = model_for_eval # Use this model for evaluation
-        model.load_state_dict(torch.load(best_model_path)) # simpler if model structure hasn't changed since saving
+        # Re-initialize model architecture before loading state_dict
+        eval_model = EnhancedCNN(num_classes=NUM_CLASSES, img_size_for_fc_calc=IMG_SIZE, dropout_rate=DROPOUT_RATE).to(device)
+        eval_model.load_state_dict(torch.load(best_model_path))
         print(f"成功从 {best_model_path} 加载最佳模型状态字典")
     else:
         print(f"警告: 未找到最佳模型状态字典文件 {best_model_path}。将使用训练结束时的模型进行测试。")
-        # current_model = model # Use the model from the end of training
-
-    current_model = model # Ensure current_model is defined for evaluation
-    current_model.eval() # Set to evaluation mode
+        eval_model = model # Use the model from the end of training
+    
+    eval_model.eval()
 
     # 10. Evaluate Model on Test Set
-    print("\n在测试集上评估优化后的模型...")
-    all_labels = []
-    all_preds = []
+    print("\n在测试集上评估优化后的自定义CNN模型...")
+    all_labels_test = []
+    all_preds_test = []
     correct_test = 0
     total_test = 0
 
@@ -220,50 +278,48 @@ def run_intermediate_goal():
     with torch.no_grad():
         for inputs, labels in test_pbar:
             inputs, labels = inputs.to(device), labels.to(device)
-            outputs = current_model(inputs) # Use current_model
+            outputs = eval_model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             
             total_test += labels.size(0)
             correct_test += (predicted == labels).sum().item()
 
-            all_labels.extend(labels.cpu().numpy())
-            all_preds.extend(predicted.cpu().numpy())
+            all_labels_test.extend(labels.cpu().numpy())
+            all_preds_test.extend(predicted.cpu().numpy())
 
     test_accuracy = correct_test / total_test
     print(f"测试集准确率: {test_accuracy:.4f}")
 
     # 11. Classification Report and Confusion Matrix
-    print("\n分类报告:")
-    print(classification_report(all_labels, all_preds, target_names=class_names, zero_division=0))
+    print("\n分类报告（测试集）:")
+    print(classification_report(all_labels_test, all_preds_test, target_names=class_names, zero_division=0))
 
-    print("\n混淆矩阵:")
-    cm = confusion_matrix(all_labels, all_preds)
-    print(cm)
+    print("\n混淆矩阵（测试集）:")
+    cm_test = confusion_matrix(all_labels_test, all_preds_test)
+    print(cm_test)
 
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
-    fig, ax = plt.subplots(figsize=(10, 10)) # Create a new figure and axes
-    disp.plot(cmap=plt.cm.Blues, xticks_rotation='vertical', ax=ax)
-    ax.set_title('Intermediate Goal - Optimized Model Confusion Matrix') # Use ax.set_title
+    disp_test = ConfusionMatrixDisplay(confusion_matrix=cm_test, display_labels=class_names)
+    fig_test, ax_test = plt.subplots(figsize=(10,10))
+    disp_test.plot(cmap=plt.cm.Blues, xticks_rotation='vertical', ax=ax_test)
+    ax_test.set_title('Intermediate Goal - EnhancedCNN Confusion Matrix (Test Set)')
     plt.tight_layout()
-    plt.savefig("intermediate_goal_confusion_matrix.png")
-    print("混淆矩阵图已保存为 intermediate_goal_confusion_matrix.png")
+    plt.savefig("intermediate_goal_enhanced_cnn_confusion_matrix.png")
+    print("混淆矩阵图已保存为 intermediate_goal_enhanced_cnn_confusion_matrix.png")
     # plt.show()
 
-    # 12. Save Full Model (final state)
-    final_model_path = "optimized_cnn_rock_classifier_final_full_model.pth"
-    torch.save(current_model, final_model_path) # Save the full model (best one if loaded, or final if not)
-    print(f"\n最终完整优化模型已保存到: {final_model_path}")
+    # 12. Save Full Model (final state of the best loaded model or last epoch model)
+    final_model_path = "enhanced_custom_cnn_final_full_model.pth"
+    torch.save(eval_model, final_model_path)
+    print(f"\n最终完整优化自定义CNN模型已保存到: {final_model_path}")
     
-    print("\n中级目标执行完成。")
+    print("\n中级目标（优化自定义CNN）执行完成。")
 
 if __name__ == '__main__':
     if not os.path.isdir("./Rock Data"):
         print("错误: 当前目录中未找到 'Rock Data' 文件夹。请确保数据集已正确放置。")
     else:
-        # You can choose which goal to run
-        # run_primary_goal()
-        
         start_time = time.time()
-        run_intermediate_goal()
+        run_intermediate_goal_optimized_cnn()
         end_time = time.time()
-        print(f"中级目标总执行时间: {(end_time - start_time)/60:.2f} 分钟")
+        print(f"中级目标（优化自定义CNN）总执行时间: {(end_time - start_time)/60:.2f} 分钟")
+
