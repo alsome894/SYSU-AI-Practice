@@ -315,11 +315,8 @@ def run_intermediate_goal_optimized_cnn():
     print("\n中级目标（优化自定义CNN）执行完成。")
 
 if __name__ == '__main__':
-    if not os.path.isdir("./Rock Data"):
-        print("错误: 当前目录中未找到 'Rock Data' 文件夹。请确保数据集已正确放置。")
-    else:
-        start_time = time.time()
-        run_intermediate_goal_optimized_cnn()
-        end_time = time.time()
-        print(f"中级目标（优化自定义CNN）总执行时间: {(end_time - start_time)/60:.2f} 分钟")
+    start_time = time.time()
+    run_intermediate_goal_optimized_cnn()
+    end_time = time.time()
+    print(f"中级目标（优化自定义CNN）总执行时间: {(end_time - start_time)/60:.2f} 分钟")
 
