@@ -60,4 +60,4 @@ swin_transformer方向，约82%测试分类准确率，达成目标，以该方�
 - 输入为`Rock Data`数据集、训练好的模型`best_model_*.pth`
   - `Rock Data`路径已经通过编排，
   - `best_model_*.pth`需要在main部分选取需要进行测试的模型、比如`best_model_82.pth`，然后直接运行即可(模型太大push不到git，懒得再搞LFS了，我直接发群里、直接按上面路径编排放到对应位置好了)
-- 输出为混淆矩阵和评判指标，前者保存在`output_swin_s\`、后者在bash直接打印输出
+- 输出为训练曲线、混淆矩阵和评判指标，前两者保存在`output_swin_s\`、后者在bash直接打印输出
