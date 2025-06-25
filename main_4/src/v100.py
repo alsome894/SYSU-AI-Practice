@@ -1,6 +1,3 @@
-# TECHNIQUE: AdamW Optimizer and CosineAnnealingLR Scheduler
-# This script demonstrates using AdamW optimizer and CosineAnnealingLR scheduler.
-
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -18,8 +15,8 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 
-# (Copy plot_training_history and train_model functions from Script 1 here if running stand-alone)
 def plot_training_history(history, num_epochs, filename_suffix=''):
+    "绘制训练和验证准确率与损失曲线"
     epochs_range = range(1, num_epochs + 1)
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
@@ -42,11 +39,11 @@ def plot_training_history(history, num_epochs, filename_suffix=''):
     print(f"Training history plot saved to training_history{filename_suffix}.png")
 
 def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, device, num_epochs=25):
+    "训练模型并返回训练历史"
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
-
     for epoch in range(num_epochs):
         print(f'\nEpoch {epoch+1}/{num_epochs}')
         print('-' * 10)
@@ -73,7 +70,7 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
                 running_corrects += torch.sum(preds == labels.data)
                 if phase == 'train':
                     progress_bar.set_postfix(loss=loss.item(), acc=torch.sum(preds == labels.data).item()/inputs.size(0))
-            if phase == 'train' and scheduler: # Check if scheduler exists
+            if phase == 'train' and scheduler:
                 scheduler.step()
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects.double() / dataset_sizes[phase]
@@ -95,25 +92,22 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
     return model, history
 
 def main_adamw_cosine():
+    "主流程：使用AdamW优化器和CosineAnnealingLR调度器训练"
     print("--- Running Script with AdamW and CosineAnnealingLR ---")
-    # Configuration
     current_file = Path(__file__).resolve()
     project_root = current_file.parent.parent.parent
     data_dir = project_root / 'Rock Data'
     model_name_suffix = '_adamw_cosine'
     model_save_path = f'rock_classifier_efficientnet_b4{model_name_suffix}.pth'
     confusion_matrix_save_path = f'confusion_matrix_efficientnet_b4{model_name_suffix}.png'
-
     input_size = 380
     batch_size = 16
-    num_epochs = 50 # Adjust as CosineAnnealingLR behaves differently
-    learning_rate = 0.001 # AdamW often works well with slightly different LRs or schedules
-    weight_decay = 0.01 # Common weight decay for AdamW
-    
+    num_epochs = 50
+    learning_rate = 0.001
+    weight_decay = 0.01
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-
-    data_transforms = { # Using basic augmentations for this example
+    data_transforms = {
         'train': transforms.Compose([
             transforms.RandomResizedCrop(input_size),
             transforms.RandomHorizontalFlip(),
@@ -134,36 +128,25 @@ def main_adamw_cosine():
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
     }
-
     print("Initializing Datasets and Dataloaders...")
-    # ... (Dataset and Dataloader creation as in Script 1) ...
     image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x]) for x in ['train', 'valid', 'test']}
     dataloaders = {x: DataLoader(image_datasets[x], batch_size=batch_size, shuffle=(x=='train'), num_workers=4 if device.type == 'cuda' else 0) for x in ['train', 'valid', 'test']}
     dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'valid', 'test']}
-    class_names = image_datasets['train'].classes; num_classes = len(class_names)
+    class_names = image_datasets['train'].classes
+    num_classes = len(class_names)
     if dataset_sizes['train'] == 0: print("Error: Training dataset is empty."); return
     print(f"Num classes: {num_classes}, Class names: {class_names}")
-
     model_ft = models.efficientnet_b4(weights=models.EfficientNet_B4_Weights.IMAGENET1K_V1)
     for param in model_ft.parameters(): param.requires_grad = False
     num_ftrs = model_ft.classifier[1].in_features
     model_ft.classifier[1] = nn.Linear(num_ftrs, num_classes)
     model_ft = model_ft.to(device)
-
     criterion = nn.CrossEntropyLoss()
-    
-    # CHANGED: Optimizer to AdamW
     optimizer_ft = optim.AdamW(filter(lambda p: p.requires_grad, model_ft.parameters()), lr=learning_rate, weight_decay=weight_decay)
-    
-    # CHANGED: Scheduler to CosineAnnealingLR
     exp_lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer_ft, T_max=num_epochs, eta_min=1e-6)
-
     print("Starting training with AdamW and CosineAnnealingLR...")
     model_ft, history = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler, dataloaders, dataset_sizes, device, num_epochs=num_epochs)
-
-    # ... (Plotting, Evaluation, Saving model as in Script 1, using model_name_suffix) ...
     plot_training_history(history, num_epochs, filename_suffix=model_name_suffix)
-    # (Test evaluation loop as in Script 1)
     print("\nEvaluating on Test Set...")
     y_pred_list = []
     y_true_list = []
@@ -197,4 +180,4 @@ def main_adamw_cosine():
 if __name__ == '__main__':
     torch.manual_seed(42); np.random.seed(42)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(42)
-    main_adamw_cosine() # Uncomment to run this specific script
+    main_adamw_cosine()

@@ -1,9 +1,3 @@
-"""
-岩石图像分类深度微调方案
-包含逐层解冻策略、混合精度训练和CUDA加速优化
-"""
-
-# 主程序保护模块（解决多进程问题）
 if __name__ == '__main__':
     import torch
     import torch.nn as nn

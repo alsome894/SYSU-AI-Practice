@@ -1,6 +1,3 @@
-# TECHNIQUE: Advanced Data Augmentation (TrivialAugmentWide)
-# This script demonstrates adding TrivialAugmentWide to the training transforms.
-
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -18,10 +15,8 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 
-# Assume train_model and plot_training_history are defined as in previous examples
-# (plot_training_history should accept a filename_suffix argument for unique saving)
-
 def plot_training_history(history, num_epochs, filename_suffix=''):
+    "绘制训练和验证准确率与损失曲线"
     epochs_range = range(1, num_epochs + 1)
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
@@ -44,11 +39,11 @@ def plot_training_history(history, num_epochs, filename_suffix=''):
     print(f"Training history plot saved to training_history{filename_suffix}.png")
 
 def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_sizes, device, num_epochs=25):
+    "训练模型并返回训练历史"
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
-
     for epoch in range(num_epochs):
         print(f'\nEpoch {epoch+1}/{num_epochs}')
         print('-' * 10)
@@ -75,7 +70,7 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
                 running_corrects += torch.sum(preds == labels.data)
                 if phase == 'train':
                     progress_bar.set_postfix(loss=loss.item(), acc=torch.sum(preds == labels.data).item()/inputs.size(0))
-            if phase == 'train' and scheduler: # Check if scheduler exists
+            if phase == 'train' and scheduler:
                 scheduler.step()
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects.double() / dataset_sizes[phase]
@@ -96,31 +91,26 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
     model.load_state_dict(best_model_wts)
     return model, history
 
-
 def main_trivial_augment():
+    "主流程：使用TrivialAugmentWide进行训练"
     print("--- Running Script with TrivialAugmentWide ---")
-    # Configuration
     current_file = Path(__file__).resolve()
     project_root = current_file.parent.parent.parent
     data_dir = project_root / 'Rock Data'
     model_name_suffix = '_trivial_augment'
     model_save_path = f'rock_classifier_efficientnet_b4{model_name_suffix}.pth'
     confusion_matrix_save_path = f'confusion_matrix_efficientnet_b4{model_name_suffix}.png'
-
     input_size = 380
-    batch_size = 16 # Adjust based on GPU memory
-    num_epochs = 50 # TrivialAugment can be strong, might need fewer/more epochs or LR tuning
+    batch_size = 16
+    num_epochs = 50
     learning_rate = 0.001
-    
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-
-    # Data transforms with TrivialAugmentWide
     data_transforms = {
         'train': transforms.Compose([
             transforms.RandomResizedCrop(input_size),
             transforms.RandomHorizontalFlip(),
-            transforms.TrivialAugmentWide(), # ADDED: TrivialAugmentWide
+            transforms.TrivialAugmentWide(),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
@@ -137,7 +127,6 @@ def main_trivial_augment():
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
     }
-
     print("Initializing Datasets and Dataloaders...")
     try:
         image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x])
@@ -145,34 +134,25 @@ def main_trivial_augment():
     except FileNotFoundError:
         print(f"Error: Data directory '{data_dir}' not found.")
         return
-
     dataloaders = {x: DataLoader(image_datasets[x], batch_size=batch_size, shuffle=(x=='train'), num_workers=4 if device.type == 'cuda' else 0)
                    for x in ['train', 'valid', 'test']}
     dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'valid', 'test']}
     class_names = image_datasets['train'].classes
     num_classes = len(class_names)
-
     if dataset_sizes['train'] == 0: print("Error: Training dataset is empty."); return
     print(f"Num classes: {num_classes}, Class names: {class_names}")
-
     model_ft = models.efficientnet_b4(weights=models.EfficientNet_B4_Weights.IMAGENET1K_V1)
     for param in model_ft.parameters():
         param.requires_grad = False
     num_ftrs = model_ft.classifier[1].in_features
     model_ft.classifier[1] = nn.Linear(num_ftrs, num_classes)
     model_ft = model_ft.to(device)
-
     criterion = nn.CrossEntropyLoss()
-    optimizer_ft = optim.AdamW(model_ft.classifier[1].parameters(), lr=learning_rate) # Using AdamW here
-    # No scheduler for this simpler example, or use StepLR/CosineAnnealingLR
+    optimizer_ft = optim.AdamW(model_ft.classifier[1].parameters(), lr=learning_rate)
     exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer_ft, step_size=5, gamma=0.1)
-
-
     print("Starting training with TrivialAugmentWide...")
     model_ft, history = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler, dataloaders, dataset_sizes, device, num_epochs=num_epochs)
-
     plot_training_history(history, num_epochs, filename_suffix=model_name_suffix)
-
     print("\nEvaluating on Test Set...")
     y_pred_list = []
     y_true_list = []
@@ -198,7 +178,6 @@ def main_trivial_augment():
     plt.xlabel('Predicted Label'); plt.ylabel('True Label')
     plt.savefig(confusion_matrix_save_path)
     print(f"Confusion matrix saved to {confusion_matrix_save_path}")
-
     print(f"\nSaving model to {model_save_path}...")
     torch.save(model_ft, model_save_path)
     print("Model saved successfully.")
@@ -207,4 +186,4 @@ def main_trivial_augment():
 if __name__ == '__main__':
     torch.manual_seed(42); np.random.seed(42)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(42)
-    main_trivial_augment() # Uncomment to run this specific script
+    main_trivial_augment()

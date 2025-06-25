@@ -3,7 +3,6 @@
 包含先切片后增强、迁移学习与可视化
 """
 
-# 主程序保护模块（解决多进程问题）
 if __name__ == '__main__':
     import torch
     import torch.nn as nn
